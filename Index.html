@@ -1,0 +1,721 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Ultrasound + CEUS Simulator (Visual Mock)</title>
+  <style>
+    :root{
+      --bg:#0b0f14; --panel:#111824; --panel2:#0f1620; --text:#e7eef7;
+      --muted:#93a4b8; --accent:#4fd1c5; --warn:#f6ad55; --danger:#fc8181;
+      --border:#243246;
+    }
+    html,body{height:100%; margin:0; background:var(--bg); color:var(--text); font:14px/1.3 system-ui, -apple-system, Segoe UI, Roboto, Arial;}
+    .wrap{display:grid; grid-template-columns: 360px 1fr; gap:14px; padding:14px; height:100%;}
+    .panel{background:linear-gradient(180deg,var(--panel),var(--panel2)); border:1px solid var(--border); border-radius:14px; padding:14px;}
+    h1{font-size:16px; margin:0 0 10px;}
+    .small{color:var(--muted); font-size:12px;}
+    .row{display:flex; align-items:center; justify-content:space-between; gap:10px; margin:10px 0;}
+    label{color:var(--muted);}
+    input[type="range"]{width:190px;}
+    input[type="checkbox"]{transform:scale(1.15);}
+    select,button{
+      background:#0c1220; border:1px solid var(--border); color:var(--text);
+      padding:8px 10px; border-radius:10px;
+    }
+    button{cursor:pointer;}
+    button.primary{border-color:rgba(79,209,197,.6); box-shadow:0 0 0 2px rgba(79,209,197,.10) inset;}
+    button.warn{border-color:rgba(246,173,85,.7);}
+    button.danger{border-color:rgba(252,129,129,.7);}
+    .grid2{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
+    .status{
+      display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:10px;
+    }
+    .card{background:#0c1220; border:1px solid var(--border); border-radius:12px; padding:10px;}
+    .card b{display:block; font-size:12px; color:var(--muted); margin-bottom:4px;}
+    .val{font-size:16px;}
+    .viewer{
+      display:flex; flex-direction:column; gap:10px;
+    }
+    .screenWrap{
+      position:relative;
+      border-radius:18px; overflow:hidden;
+      border:1px solid var(--border);
+      background:#000;
+      height: calc(100vh - 28px);
+      min-height:560px;
+    }
+    canvas{display:block; width:100%; height:100%;}
+    .overlayHUD{
+      position:absolute; inset:0; pointer-events:none;
+      padding:12px;
+      color:rgba(231,238,247,.9);
+      text-shadow:0 1px 2px rgba(0,0,0,.8);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    .hudTop{display:flex; justify-content:space-between; align-items:flex-start;}
+    .hudLeft{display:flex; flex-direction:column; gap:6px;}
+    .tag{
+      display:inline-flex; gap:8px; align-items:center;
+      background:rgba(15,22,32,.55);
+      border:1px solid rgba(36,50,70,.7);
+      padding:6px 8px; border-radius:12px;
+      font-size:12px;
+      width:fit-content;
+    }
+    .dot{width:8px; height:8px; border-radius:50%;}
+    .dot.b{background:#cbd5e1;}
+    .dot.c{background:#63b3ed;}
+    .dot.ceus{background:#f6ad55;}
+    .scale{
+      position:absolute; left:12px; bottom:14px;
+      display:flex; flex-direction:column; gap:6px; align-items:flex-start;
+    }
+    .scaleBar{
+      width:10px; height:160px; border-radius:8px;
+      background:linear-gradient(180deg,rgba(231,238,247,.15),rgba(231,238,247,.02));
+      border:1px solid rgba(231,238,247,.12);
+      position:relative;
+    }
+    .tick{position:absolute; left:12px; height:1px; width:14px; background:rgba(231,238,247,.35);}
+    .tickLabel{position:absolute; left:30px; transform:translateY(-50%); font-size:11px; color:rgba(231,238,247,.75);}
+    .footerNote{
+      margin-top:10px;
+      color:var(--muted);
+      font-size:12px;
+    }
+    .kbd{
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      background:#0c1220; border:1px solid var(--border);
+      padding:1px 6px; border-radius:7px;
+      color:rgba(231,238,247,.85);
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="panel">
+      <h1>Ultrasound + CEUS Simulator</h1>
+      <div class="small">
+        Visual mock for UI/education only. Not diagnostic. No real imaging physics.
+      </div>
+
+      <div class="row">
+        <label>Preset</label>
+        <select id="preset">
+          <option value="abdomen">Abdomen</option>
+          <option value="liver">Liver</option>
+          <option value="kidney">Kidney</option>
+          <option value="vascular">Vascular</option>
+        </select>
+      </div>
+
+      <div class="grid2">
+        <button id="freezeBtn" class="primary">Freeze</button>
+        <button id="resetBtn">Reset</button>
+      </div>
+
+      <div class="row">
+        <label>Gain</label>
+        <input id="gain" type="range" min="0" max="2" step="0.01" value="1.0" />
+        <span id="gainVal" class="small">1.00</span>
+      </div>
+
+      <div class="row">
+        <label>Depth</label>
+        <input id="depth" type="range" min="2" max="16" step="0.1" value="10" />
+        <span id="depthVal" class="small">10.0 cm</span>
+      </div>
+
+      <div class="row">
+        <label>TGC (Near/Far)</label>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <input id="tgcNear" type="range" min="0" max="2" step="0.01" value="1.05" />
+          <input id="tgcFar" type="range" min="0" max="2" step="0.01" value="0.95" />
+        </div>
+      </div>
+
+      <div class="row">
+        <label>Frame rate</label>
+        <input id="fps" type="range" min="10" max="60" step="1" value="35" />
+        <span id="fpsVal" class="small">35 fps</span>
+      </div>
+
+      <hr style="border:0; border-top:1px solid var(--border); margin:12px 0;"/>
+
+      <div class="row">
+        <label>CEUS mode</label>
+        <input id="ceusOn" type="checkbox" />
+      </div>
+
+      <div class="row">
+        <label>MI (mechanical index)</label>
+        <input id="mi" type="range" min="0.05" max="0.9" step="0.01" value="0.12" />
+        <span id="miVal" class="small">0.12</span>
+      </div>
+
+      <div class="row">
+        <label>Overlay intensity</label>
+        <input id="ceusAlpha" type="range" min="0" max="1" step="0.01" value="0.65" />
+        <span id="ceusAlphaVal" class="small">0.65</span>
+      </div>
+
+      <div class="grid2">
+        <button id="injectBtn" class="warn">Inject contrast</button>
+        <button id="clearContrastBtn" class="danger">Clear contrast</button>
+      </div>
+
+      <div class="row">
+        <label>Dual display</label>
+        <input id="dual" type="checkbox" checked />
+      </div>
+
+      <div class="status">
+        <div class="card">
+          <b>Status</b>
+          <div class="val" id="statusTxt">LIVE</div>
+        </div>
+        <div class="card">
+          <b>Timer</b>
+          <div class="val" id="timerTxt">00:00</div>
+        </div>
+        <div class="card">
+          <b>Phase</b>
+          <div class="val" id="phaseTxt">—</div>
+        </div>
+        <div class="card">
+          <b>Bubble level</b>
+          <div class="val" id="bubbleTxt">0%</div>
+        </div>
+      </div>
+
+      <div class="footerNote">
+        Tips: drag mouse on image to “sweep” the probe. Keys:
+        <span class="kbd">F</span> freeze,
+        <span class="kbd">I</span> inject,
+        <span class="kbd">C</span> toggle CEUS.
+      </div>
+    </div>
+
+    <div class="viewer">
+      <div class="screenWrap">
+        <canvas id="cv"></canvas>
+        <div class="overlayHUD" id="hud">
+          <div class="hudTop">
+            <div class="hudLeft">
+              <div class="tag"><span class="dot b"></span><span id="hudPreset">ABD</span> <span id="hudMode">B</span></div>
+              <div class="tag"><span class="dot ceus"></span>CEUS <span id="hudCeusState">OFF</span> • MI <span id="hudMI">0.12</span></div>
+              <div class="tag"><span class="dot c"></span>Depth <span id="hudDepth">10.0</span> cm • Gain <span id="hudGain">1.00</span></div>
+            </div>
+            <div class="tag">FPS <span id="hudFPS">35</span> • <span id="hudLive">LIVE</span></div>
+          </div>
+
+          <div class="scale">
+            <div class="scaleBar" id="scaleBar"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+(() => {
+  const cv = document.getElementById('cv');
+  const ctx = cv.getContext('2d', { alpha: false });
+
+  // Controls
+  const el = (id)=>document.getElementById(id);
+  const presetEl = el('preset');
+  const freezeBtn = el('freezeBtn');
+  const resetBtn = el('resetBtn');
+
+  const gainEl = el('gain');
+  const depthEl = el('depth');
+  const tgcNearEl = el('tgcNear');
+  const tgcFarEl = el('tgcFar');
+  const fpsEl = el('fps');
+
+  const ceusOnEl = el('ceusOn');
+  const miEl = el('mi');
+  const ceusAlphaEl = el('ceusAlpha');
+  const injectBtn = el('injectBtn');
+  const clearContrastBtn = el('clearContrastBtn');
+  const dualEl = el('dual');
+
+  // Readouts
+  const gainVal = el('gainVal');
+  const depthVal = el('depthVal');
+  const fpsVal = el('fpsVal');
+  const miVal = el('miVal');
+  const ceusAlphaVal = el('ceusAlphaVal');
+
+  const statusTxt = el('statusTxt');
+  const timerTxt = el('timerTxt');
+  const phaseTxt = el('phaseTxt');
+  const bubbleTxt = el('bubbleTxt');
+
+  // HUD
+  const hudPreset = el('hudPreset');
+  const hudMode = el('hudMode');
+  const hudCeusState = el('hudCeusState');
+  const hudMI = el('hudMI');
+  const hudDepth = el('hudDepth');
+  const hudGain = el('hudGain');
+  const hudFPS = el('hudFPS');
+  const hudLive = el('hudLive');
+
+  // Scale bar ticks
+  const scaleBar = el('scaleBar');
+
+  // State
+  let W=0,H=0, DPR=1;
+  function resize(){
+    DPR = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+    const rect = cv.getBoundingClientRect();
+    W = Math.floor(rect.width * DPR);
+    H = Math.floor(rect.height * DPR);
+    cv.width = W; cv.height = H;
+    buildScale();
+  }
+  window.addEventListener('resize', resize);
+
+  // Simple noise helper
+  function randn(){
+    // approx gaussian
+    let u=0,v=0;
+    while(u===0) u=Math.random();
+    while(v===0) v=Math.random();
+    return Math.sqrt(-2.0*Math.log(u))*Math.cos(2.0*Math.PI*v);
+  }
+
+  // Tissue "scatterers" / structures
+  const blobs = [];
+  function makeBlobs(seed=0){
+    blobs.length = 0;
+    const n = 8;
+    for(let i=0;i<n;i++){
+      blobs.push({
+        x: Math.random(),
+        y: 0.15 + Math.random()*0.75,
+        r: 0.06 + Math.random()*0.12,
+        a: 0.25 + Math.random()*0.45,
+        vx: (Math.random()*2-1)*0.02,
+        vy: (Math.random()*2-1)*0.01
+      });
+    }
+  }
+
+  // CEUS bubble particles
+  const bubbles = [];
+  let contrastStart = null; // ms
+  let contrastActive = false;
+
+  // Probe sweep (mouse drag)
+  let sweepX = 0.0; // -1..1
+  let sweepY = 0.0;
+  let dragging = false;
+
+  cv.addEventListener('pointerdown', (e)=>{ dragging=true; cv.setPointerCapture(e.pointerId); handlePointer(e); });
+  cv.addEventListener('pointermove', (e)=>{ if(dragging) handlePointer(e); });
+  cv.addEventListener('pointerup', ()=>{ dragging=false; });
+  cv.addEventListener('pointercancel', ()=>{ dragging=false; });
+
+  function handlePointer(e){
+    const r = cv.getBoundingClientRect();
+    const x = (e.clientX - r.left) / r.width;
+    const y = (e.clientY - r.top) / r.height;
+    sweepX = (x - 0.5) * 2;          // -1..1
+    sweepY = (y - 0.5) * 2 * 0.6;    // smaller effect
+  }
+
+  // Preset tuning
+  const presets = {
+    abdomen: { speckle: 1.0, atten: 1.0, blob: 1.0, colorMap: 'amber' },
+    liver:   { speckle: 0.9, atten: 1.1, blob: 1.15, colorMap: 'amber' },
+    kidney:  { speckle: 1.1, atten: 0.95, blob: 1.25, colorMap: 'amber' },
+    vascular:{ speckle: 0.85, atten: 0.9, blob: 0.9, colorMap: 'blue' }
+  };
+
+  function fmtTime(ms){
+    const s = Math.max(0, Math.floor(ms/1000));
+    const mm = String(Math.floor(s/60)).padStart(2,'0');
+    const ss = String(s%60).padStart(2,'0');
+    return `${mm}:${ss}`;
+  }
+
+  function clamp01(x){ return Math.max(0, Math.min(1, x)); }
+
+  function buildScale(){
+    // Clear previous ticks
+    scaleBar.innerHTML = "";
+    const depthCm = parseFloat(depthEl.value);
+    // 0..depthCm mapped to bar height
+    const ticks = 5;
+    for(let i=0;i<=ticks;i++){
+      const y = (i/ticks) * 100;
+      const tick = document.createElement('div');
+      tick.className = 'tick';
+      tick.style.top = `${y}%`;
+      const lab = document.createElement('div');
+      lab.className = 'tickLabel';
+      lab.style.top = `${y}%`;
+      lab.textContent = `${(depthCm*(i/ticks)).toFixed(0)} cm`;
+      scaleBar.appendChild(tick);
+      scaleBar.appendChild(lab);
+    }
+  }
+
+  // Contrast kinetics model (very simple):
+  // bubbleLevel(t) = washIn * washOut with smooth curves; affected by MI.
+  function bubbleLevelAt(tSec, mi){
+    // wash-in ~ sigmoid; wash-out ~ exp decay
+    const washIn = 1 / (1 + Math.exp(-(tSec - 8) / 2.0)); // rises around 8s
+    const decayRate = 0.03 + mi * 0.12; // higher MI -> faster destruction
+    const washOut = Math.exp(-Math.max(0, tSec - 18) * decayRate); // start washing out after ~18s
+    return clamp01(washIn * washOut);
+  }
+
+  function phaseAt(tSec){
+    if(tSec < 3) return "pre-contrast";
+    if(tSec < 15) return "wash-in";
+    if(tSec < 40) return "peak";
+    return "wash-out";
+  }
+
+  function inject(){
+    contrastStart = performance.now();
+    contrastActive = true;
+    // Seed some particles
+    for(let i=0;i<300;i++){
+      bubbles.push(spawnBubble(true));
+    }
+  }
+
+  function clearContrast(){
+    contrastActive = false;
+    contrastStart = null;
+    bubbles.length = 0;
+  }
+
+  function spawnBubble(burst=false){
+    // bubbles originate near "vasculature" lanes, with jitter
+    const lane = Math.random();
+    const x = 0.15 + lane*0.7 + (Math.random()*2-1)*0.06;
+    const y = 0.15 + Math.random()*0.75;
+    return {
+      x, y,
+      r: burst ? (0.002 + Math.random()*0.006) : (0.0015 + Math.random()*0.004),
+      life: burst ? (0.8 + Math.random()*1.6) : (0.6 + Math.random()*1.2),
+      age: 0,
+      // drift slightly upward and sideways; sweep affects direction
+      vx: (Math.random()*2-1)*0.02,
+      vy: -(0.01 + Math.random()*0.03)
+    };
+  }
+
+  // UI wiring
+  function updateLabels(){
+    gainVal.textContent = (+gainEl.value).toFixed(2);
+    depthVal.textContent = `${(+depthEl.value).toFixed(1)} cm`;
+    fpsVal.textContent = `${fpsEl.value} fps`;
+    miVal.textContent = (+miEl.value).toFixed(2);
+    ceusAlphaVal.textContent = (+ceusAlphaEl.value).toFixed(2);
+
+    hudDepth.textContent = (+depthEl.value).toFixed(1);
+    hudGain.textContent = (+gainEl.value).toFixed(2);
+    hudFPS.textContent = fpsEl.value;
+    hudMI.textContent = (+miEl.value).toFixed(2);
+    hudCeusState.textContent = ceusOnEl.checked ? "ON" : "OFF";
+    hudLive.textContent = frozen ? "FREEZE" : "LIVE";
+
+    const p = presetEl.value;
+    hudPreset.textContent = p.toUpperCase().slice(0,3);
+    hudMode.textContent = ceusOnEl.checked ? (dualEl.checked ? "B+CEUS" : "CEUS") : "B";
+    buildScale();
+  }
+
+  [
+    presetEl, gainEl, depthEl, tgcNearEl, tgcFarEl, fpsEl,
+    ceusOnEl, miEl, ceusAlphaEl, dualEl
+  ].forEach(x => x.addEventListener('input', updateLabels));
+
+  injectBtn.addEventListener('click', inject);
+  clearContrastBtn.addEventListener('click', clearContrast);
+
+  resetBtn.addEventListener('click', ()=>{
+    gainEl.value = 1.0;
+    depthEl.value = 10;
+    tgcNearEl.value = 1.05;
+    tgcFarEl.value = 0.95;
+    fpsEl.value = 35;
+    ceusOnEl.checked = false;
+    miEl.value = 0.12;
+    ceusAlphaEl.value = 0.65;
+    dualEl.checked = true;
+    presetEl.value = "abdomen";
+    clearContrast();
+    makeBlobs();
+    updateLabels();
+  });
+
+  let frozen = false;
+  freezeBtn.addEventListener('click', ()=>{ frozen = !frozen; freezeBtn.textContent = frozen ? "Unfreeze" : "Freeze"; updateLabels(); });
+
+  window.addEventListener('keydown', (e)=>{
+    if(e.key.toLowerCase()==='f'){ frozen = !frozen; freezeBtn.textContent = frozen ? "Unfreeze" : "Freeze"; updateLabels(); }
+    if(e.key.toLowerCase()==='i'){ inject(); }
+    if(e.key.toLowerCase()==='c'){ ceusOnEl.checked = !ceusOnEl.checked; updateLabels(); }
+  });
+
+  // Render loop
+  let lastT = performance.now();
+  let acc = 0;
+
+  function renderFrame(dt, now){
+    const p = presets[presetEl.value];
+
+    // Background black
+    ctx.fillStyle = "#000";
+    ctx.fillRect(0,0,W,H);
+
+    // Parameters
+    const gain = +gainEl.value;
+    const depthCm = +depthEl.value;
+    const tgcNear = +tgcNearEl.value;
+    const tgcFar = +tgcFarEl.value;
+
+    // Create B-mode image
+    // We'll draw per scanline blocks for speed; not physically accurate.
+    const img = ctx.getImageData(0,0,W,H);
+    const d = img.data;
+
+    // Sweep warp factor
+    const warpX = sweepX * 0.035;
+    const warpY = sweepY * 0.02;
+
+    // Attenuation with depth (more depth -> more attenuation)
+    const attenBase = 0.7 / Math.sqrt(depthCm/6);
+
+    // Precompute blob contributions
+    const blobStrength = 0.9 * p.blob;
+    const speckle = 1.0 * p.speckle;
+
+    for(let y=0;y<H;y++){
+      const yn = y/(H-1);
+      // TGC blend near->far
+      const tgc = tgcNear*(1-yn) + tgcFar*yn;
+
+      // Attenuation increases with depth
+      const atten = Math.exp(-yn * (1.8*p.atten)) * attenBase;
+
+      for(let x=0;x<W;x++){
+        const xn = x/(W-1);
+
+        // Speckle noise with mild correlation
+        const n = randn()*0.22 + (Math.random()-0.5)*0.10;
+
+        // Soft structures ("blobs")
+        let s = 0;
+        const wx = xn + warpX*Math.sin(yn*6.0 + now*0.0008);
+        const wy = yn + warpY*Math.sin(xn*4.0 + now*0.0007);
+
+        for(let i=0;i<blobs.length;i++){
+          const b = blobs[i];
+          const dx = wx - b.x;
+          const dy = wy - b.y;
+          const rr = dx*dx + dy*dy;
+          s += b.a * Math.exp(-rr / (b.r*b.r));
+        }
+
+        // Some layered “fascia” lines
+        const lines = 0.10*Math.sin((wy*18 + now*0.0004)*Math.PI) + 0.06*Math.sin((wy*34 - wx*4)*Math.PI);
+
+        // Compose intensity
+        let I = (0.20 + speckle*n + blobStrength*s + lines);
+        I *= gain * tgc * atten;
+
+        // Clamp and gamma-ish
+        I = Math.max(0, Math.min(1, I));
+        I = Math.pow(I, 0.7);
+
+        const g = Math.floor(I*255);
+        const idx = (y*W + x)*4;
+        d[idx+0]=g; d[idx+1]=g; d[idx+2]=g; d[idx+3]=255;
+      }
+    }
+
+    ctx.putImageData(img,0,0);
+
+    // Draw a triangular "sector" mask typical of curvilinear probe
+    ctx.save();
+    ctx.globalCompositeOperation = 'destination-in';
+    ctx.beginPath();
+    const apexX = W*0.5;
+    const apexY = H*0.03;
+    const leftX = W*0.10;
+    const rightX = W*0.90;
+    const bottomY = H*0.98;
+    ctx.moveTo(apexX, apexY);
+    ctx.quadraticCurveTo(W*0.30, H*0.20, leftX, bottomY);
+    ctx.lineTo(rightX, bottomY);
+    ctx.quadraticCurveTo(W*0.70, H*0.20, apexX, apexY);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+
+    // Edge vignette
+    ctx.save();
+    ctx.globalCompositeOperation = 'multiply';
+    const grad = ctx.createRadialGradient(W*0.5,H*0.65, H*0.15, W*0.5,H*0.65, H*0.9);
+    grad.addColorStop(0,'rgba(0,0,0,0)');
+    grad.addColorStop(1,'rgba(0,0,0,0.85)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0,0,W,H);
+    ctx.restore();
+
+    // CEUS overlay
+    const ceusOn = ceusOnEl.checked;
+    const dual = dualEl.checked;
+    const mi = +miEl.value;
+    const alpha = +ceusAlphaEl.value;
+
+    let bubbleLevel = 0;
+    let tSec = 0;
+    if(contrastActive && contrastStart){
+      tSec = (now - contrastStart)/1000;
+      bubbleLevel = bubbleLevelAt(tSec, mi);
+    }
+
+    // Update bubble particles (even if CEUS off; they exist in "system")
+    // Spawn rate depends on bubbleLevel
+    if(contrastActive && contrastStart){
+      const spawn = Math.floor(40 * bubbleLevel);
+      for(let i=0;i<spawn;i++){
+        bubbles.push(spawnBubble(false));
+      }
+      // Cap
+      if(bubbles.length > 1400) bubbles.splice(0, bubbles.length-1400);
+    }
+
+    // Move + age
+    for(let i=bubbles.length-1;i>=0;i--){
+      const b = bubbles[i];
+      b.age += dt;
+      // Higher MI destroys bubbles faster
+      const destroy = (0.15 + mi*0.9);
+      b.life -= dt*destroy;
+
+      // Flow field with sweep
+      const flowX = 0.010*Math.sin((b.y*14 + now*0.0012)*Math.PI) + sweepX*0.008;
+      const flowY = 0.004*Math.cos((b.x*10 + now*0.0010)*Math.PI) + sweepY*0.006;
+
+      b.x += (b.vx + flowX) * dt;
+      b.y += (b.vy + flowY) * dt;
+
+      if(b.life <= 0 || b.x<0 || b.x>1 || b.y<0 || b.y>1.2){
+        bubbles.splice(i,1);
+      }
+    }
+
+    // Render CEUS as colored hot spots
+    if(ceusOn && (dual || !dual)){
+      // If not dual, dim the B-mode to emphasize CEUS.
+      if(!dual){
+        ctx.save();
+        ctx.globalCompositeOperation = 'multiply';
+        ctx.fillStyle = 'rgba(0,0,0,0.35)';
+        ctx.fillRect(0,0,W,H);
+        ctx.restore();
+      }
+
+      // Color map
+      const cmap = p.colorMap; // amber or blue
+      ctx.save();
+      ctx.globalCompositeOperation = 'screen';
+      ctx.globalAlpha = alpha * (0.15 + 0.85*bubbleLevel);
+
+      for(const b of bubbles){
+        // map normalized to sector coords
+        const x = b.x*W;
+        const y = b.y*H;
+        const r = (b.r * Math.min(W,H)) * (1.0 + 0.8*bubbleLevel);
+
+        const g = ctx.createRadialGradient(x,y, 0, x,y, r*6);
+        if(cmap==='blue'){
+          g.addColorStop(0, `rgba(99,179,237,0.95)`);
+          g.addColorStop(0.25, `rgba(66,153,225,0.55)`);
+          g.addColorStop(1, `rgba(66,153,225,0.0)`);
+        }else{
+          g.addColorStop(0, `rgba(246,173,85,0.95)`);
+          g.addColorStop(0.25, `rgba(237,137,54,0.55)`);
+          g.addColorStop(1, `rgba(237,137,54,0.0)`);
+        }
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(x,y, r*6, 0, Math.PI*2);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    // Update “tissue motion” when live
+    if(!frozen){
+      for(const b of blobs){
+        b.x += b.vx*dt*(0.25 + Math.abs(sweepX)*0.8);
+        b.y += b.vy*dt*(0.25 + Math.abs(sweepY)*0.8);
+        // wrap softly
+        if(b.x<0.15) b.x=0.85;
+        if(b.x>0.85) b.x=0.15;
+        b.y = Math.max(0.12, Math.min(0.92, b.y));
+      }
+    }
+
+    // Status readouts
+    statusTxt.textContent = frozen ? "FREEZE" : "LIVE";
+    hudLive.textContent = frozen ? "FREEZE" : "LIVE";
+    if(contrastActive && contrastStart){
+      timerTxt.textContent = fmtTime(now - contrastStart);
+      phaseTxt.textContent = phaseAt(tSec);
+      bubbleTxt.textContent = `${Math.round(bubbleLevel*100)}%`;
+    }else{
+      timerTxt.textContent = "00:00";
+      phaseTxt.textContent = "—";
+      bubbleTxt.textContent = "0%";
+    }
+  }
+
+  // Frame pacing based on fps slider
+  let targetFPS = +fpsEl.value;
+  fpsEl.addEventListener('input', ()=>{ targetFPS = +fpsEl.value; });
+
+  function loop(now){
+    const dtMs = now - lastT;
+    lastT = now;
+
+    // If frozen, we still update HUD but do not evolve tissue/bubbles (keep dt=0 for sim)
+    // However, allow timer to continue when frozen? Real scanners freeze time; we’ll freeze kinetics too.
+    const simDt = frozen ? 0 : (dtMs/1000);
+
+    // Pace to target fps
+    const frameInterval = 1/targetFPS;
+    acc += dtMs/1000;
+
+    if(acc >= frameInterval){
+      // Render once; drop extra accumulated time for simplicity
+      acc = 0;
+      renderFrame(simDt, now);
+    }
+
+    requestAnimationFrame(loop);
+  }
+
+  // init
+  makeBlobs();
+  resize();
+  updateLabels();
+  requestAnimationFrame(loop);
+
+})();
+</script>
+</body>
+</html>
